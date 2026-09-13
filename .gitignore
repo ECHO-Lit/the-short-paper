@@ -1,0 +1,25 @@
+# LaTeX
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.toc
+*.synctex.gz
+*.nav
+*.snm
+*.vrb
+*.idx
+*.ilg
+*.ind
+*.lof
+*.lot
+*.bcf
+*.run.xml
+paper/*.pdf
+!paper/main.pdf
+
+.DS_Store
+.claude
