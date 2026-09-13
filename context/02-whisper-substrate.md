@@ -17,8 +17,8 @@ Whisper is an encoder–decoder Transformer. Encoder and decoder share width \(d
 
 1. Log-Mel \(\to\) convs \(\to\) encoder blocks \(\to\) \((1, 1500, d)\). This tensor is computed **once, no grad**, and fed as cross-attention K/V.
 2. Decoder input ids (teacher-forced, labels shifted right past SOT).
-3. `hidden_states`: embedding output + each decoder block. HF also appends post-final-LayerNorm as `last_hidden_state`.
-4. **Sources** = every hidden state except the final one (7 sources on base: layers \(0..6\)).
+3. Current Hugging Face Whisper records `hidden_states` from each `WhisperDecoderLayer` (six on base). The embedding output is **not** in that tuple.
+4. `last_hidden_state` is `layer_norm` of the last block — a distinct tensor. The identity filter in `_decoder_states` therefore keeps all six block outputs.
 5. **Target** = `last_hidden_state`, the exact tensor `proj_out` consumes.
 
 ## Why the encoder is not the workspace

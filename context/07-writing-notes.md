@@ -15,7 +15,7 @@ Draft lists the ECHO-Lit group at the University of Moratuwa. Edit names and ema
 - CTC is excluded because there is no decoder residual to unembed.
 - The ECHO UI exposes a `(position × layer)` top-\(k\) grid.
 - Unit tests recover a linear closed form.
-- Qualitative patterns listed in `04-qualitative-readings.md` have been observed in the lab.
+- The grid *affords* the readings in `04-qualitative-readings.md`. They are not empirical results until a figure exists.
 
 ## Claims that are not allowed without new experiments
 
@@ -31,7 +31,7 @@ Draft lists the ECHO-Lit group at the University of Moratuwa. Edit names and ema
 - \(h_{\mathrm{final},t'}\) `last_hidden_state`
 - \(E\) tied output projection
 - \(J_\ell\) fitted map
-- \(T\) decoder length, \(d\) width, \(L\) lens-layer count (7 on base)
+- \(T\) decoder length, \(d\) width, \(L\) lens-layer count (6 decoder blocks on whisper-base)
 
 ## Build
 

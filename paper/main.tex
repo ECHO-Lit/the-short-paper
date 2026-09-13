@@ -13,7 +13,7 @@
 \usepackage{balance}
 \usetikzlibrary{arrows.meta,positioning,calc,fit}
 
-\hyphenation{Whisper Jacobian decoder-only verbal-izable}
+\hyphenation{Whisper Jacobian decoder-only verbal-izable Hutchinson}
 
 \begin{document}
 
@@ -28,11 +28,9 @@ University of Moratuwa, Sri Lanka}
 \maketitle
 
 \begin{abstract}
-Encoder--decoder speech recognizers such as Whisper fuse acoustic evidence into a decoder residual stream that is then unembedded as tokens. We ask whether the Jacobian lens---introduced to identify verbalizable representations in language models---transfers to this decoder. A natural first attempt, a pooled encoder-to-decoder transport, destroys the causal \((t,t')\) structure of the map and yields scores without logit semantics. We instead fit one averaged, position-resolved Jacobian per decoder layer,
+The Jacobian lens identifies representations a language model is poised to verbalize by averaging causal maps from a layer's residual stream to the final pre-logit state. Encoder--decoder speech recognizers split that residual across two stacks: an encoder that is never unembedded and a decoder that is. We show that a pooled encoder-to-decoder transport is not this object---it destroys the causal \((t,t')\) structure and leaves the unembedding off-manifold. We instead fit one Jacobian per decoder block,
 \(J_\ell=\mathbb{E}_{t,\,t'\ge t}[\partial h_{\mathrm{final},t'}/\partial h_{\ell,t}]\),
-estimated with Hutchinson probes, and read out with the model's own output projection:
-\(\mathrm{lens}(h)=\mathrm{softmax}(E\,J_\ell h)\).
-The resulting \((\text{position}\times\text{layer})\) grid is implemented in ECHO, an audio interpretability workbench. Qualitative readings recover crystallization depth, an audio-only workspace at the start-of-transcript token, language-prior versus acoustic evidence, and precursor signatures of hallucination loops.
+with Hutchinson probes, and read out \(\operatorname{softmax}(E J_\ell h_{\ell,t})\) through Whisper's own tied projection. The construction is implemented in ECHO. On a linear stub decoder the estimator recovers the closed form \(J=2M/(T+1)\) to relative Frobenius error \(<0.1\); a Whisper-base fit yields six \(512\times 512\) maps. We specify a reading protocol for the resulting \((\text{position}\times\text{layer})\) grid and leave a workspace-band census as future work.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -41,43 +39,31 @@ speech recognition, mechanistic interpretability, Jacobian lens, Whisper, encode
 
 \section{Introduction}
 
-Automatic speech recognition (ASR) models such as Whisper~\cite{radford2023whisper} are now accurate enough that \emph{how} they transcribe matters as much as \emph{what} they transcribe. Hallucinated repetitions under silence, homophone substitutions, and early cutoffs are familiar failure modes, yet the internal state that produces the next token is rarely inspected in vocabulary space.
+Whisper~\cite{radford2023whisper} and related encoder--decoder ASR models transcribe by unembedding a decoder residual stream that has attended to a frozen acoustic encoder. Failures such as silence-induced repetition, homophone substitution, and early cutoff are well known, yet the decoder state that is about to become the next token is rarely inspected in vocabulary space.
 
-A parallel question has just been posed for language models. Gurnee et~al.~\cite{gurnee2026workspace} introduce the \emph{Jacobian lens}: an average causal map from a layer's residual stream to the final pre-logit state, read out with the model's own unembedding. The tokens that this readout ranks are the representations the model is \emph{poised to verbalize}. In LLMs those representations occupy a mid-depth band with the functional hallmarks of a global workspace.
+Gurnee et~al.~\cite{gurnee2026workspace} give language models a tool for that inspection: the Jacobian lens averages \(\partial h_{\mathrm{final},t'}/\partial h_{\ell,t}\) over causally allowed pairs \(t'\ge t\), then reads the transported residual with the model's unembedding. The ranked tokens are what the model is \emph{poised to verbalize}. The construction assumes a single residual stream that ends in an unembedding. Speech-to-text models do not: the encoder never sees that unembedding.
 
-Speech-to-text models look, at first glance, like a hard case for the same construction. The residual stream is split across two components. Acoustic computation lives in an encoder that is never unembedded; verbalization lives in a decoder that attends to the encoder through cross-attention~\cite{vaswani2017attention}. The question is which stream the lens should read.
-
-This short paper answers: the decoder, and only the decoder. We port the LLM Jacobian-lens estimator to Whisper's decoder residual stream, fit it with Hutchinson probes~\cite{hutchinson1989trace} so that the encoder can sit outside the autograd graph, and ship the result as a first-class tool in ECHO, a Learning Interpretability Tool for audio models~\cite{tenney2020lit}. Along the way we record why the obvious alternative---a pooled transport from encoder blocks into the decoder---is the wrong object.
-
-Contributions:
-\begin{itemize}
-\item A decoder-only J-lens for seq2seq ASR that matches the LLM construction: same-space maps, causal averaging over \(t'\ge t\), readout \(\mathrm{softmax}(EJh)\).
-\item A failure analysis of pooled encoder transports (destroyed alignment, off-manifold unembedding, scores without probability semantics).
-\item An implementation in ECHO, with a \((\text{position}\times\text{layer})\) visualization and a linear closed-form test, plus qualitative readings of Whisper-base.
-\end{itemize}
+This paper ports the estimator to the stream that does. We fit decoder-only Jacobians for seq2seq ASR, estimate them with Hutchinson probes~\cite{hutchinson1989trace} so the encoder can sit outside the autograd graph, and ship fit/apply as jobs in ECHO, an audio interpretability workbench in the spirit of LIT~\cite{tenney2020lit}. We also record why a pooled encoder transport---the obvious first attempt---is a different, weaker object. We do not claim that Whisper has a global workspace; we claim that if one wants the LLM lens, one must fit it on the decoder.
 
 \section{Related Work}
 
-\textbf{Lenses on language models.}
-The logit lens~\cite{nostalgebraist2020logitlens} applies the unembedding to intermediate residuals (identity transport). The tuned lens~\cite{belrose2023tuned} learns an affine map to the final layer. The Jacobian lens~\cite{gurnee2026workspace} is neither: it is the \emph{average derivative} of the true residual-to-final map, not a regression onto final states. We copy that estimator, not the LLM causal suite (write, hold, ablate), which we do not claim to have reproduced.
+The logit lens~\cite{nostalgebraist2020logitlens} applies the unembedding to intermediate residuals (identity transport). The tuned lens~\cite{belrose2023tuned} learns an affine map to the final layer. The Jacobian lens~\cite{gurnee2026workspace} is the average \emph{derivative} of the true residual-to-final map. We copy that estimator, not the LLM write/hold/ablate suite.
 
-\textbf{Encoder--decoder interpretation.}
-DecoderLens~\cite{langedijk2024decoderlens} skips encoder layers into a frozen decoder to ask what the encoder has computed. Complementary: they interpret the encoder \emph{through} the decoder; we interpret the decoder \emph{with} its own Jacobian. Linear probes~\cite{alain2017probes,hewitt2019structural,belinkov2022probing} diagnose linearly available features but are not causal maps onto the model's unembedding.
+DecoderLens~\cite{langedijk2024decoderlens} feeds intermediate \emph{encoder} layers to a frozen decoder's cross-attention so the decoder can verbalize encoder states. Langedijk et~al.\ already run this on Whisper transcription: early encoder layers emit empty or repetitive strings; later ones approximate the transcript. Complementary: they interpret the encoder \emph{through} the decoder; we interpret the decoder \emph{with} its own Jacobian. Linear probes~\cite{alain2017probes,hewitt2019structural,belinkov2022probing} test linearly available features but are not maps onto the model's unembedding.
 
-\textbf{Speech tooling.}
 ECHO is the audio analogue of LIT~\cite{tenney2020lit}: attention, saliency, embeddings, and perturbations on Whisper and wav2vec~2.0~\cite{baevski2020wav2vec2}. Attention says where the decoder looked in the audio; saliency says which waveform regions moved a scalar. Neither says what the decoder is poised to say. CTC models have no decoder residual to unembed and are excluded.
 
 \section{Method}
 
 \subsection{Substrate}
 
-Whisper is an encoder--decoder Transformer. For a clip, the encoder emits a length-1500 acoustic sequence (30\,s of log-Mel, stride~2). The decoder, at each transcript position \(t\), attends causally to the prefix and, via cross-attention, to all 1500 encoder frames, then unembeds with a tied projection \(E\). On Whisper-base, both stacks have width \(d=512\) and six blocks; the Hugging Face decoder reports seven residual streams (embedding output plus six blocks). The fit target is the model's last hidden state, the post-final-LayerNorm tensor that \(E\) consumes. We write \(h_{\ell,t}\in\mathbb{R}^d\) for the residual at lens-layer \(\ell\) and position \(t\), and \(h_{\mathrm{final},t'}\) for that target.
+Whisper is an encoder--decoder Transformer~\cite{vaswani2017attention}. A 30\,s log-Mel spectrogram (80 bins \(\times\) 3000 frames on the base model) is downsampled by a stride-2 convolution to \(n_{\mathrm{audio}}=1500\) encoder positions of width \(d=512\). The decoder, at each transcript position \(t\le 448\), attends causally to its prefix and, via cross-attention, to all 1500 encoder frames, then unembeds with a tied projection \(E\in\mathbb{R}^{V\times d}\) (\(V=51865\)). We write \(h_{\ell,t}\in\mathbb{R}^d\) for the residual at decoder block \(\ell\) and position \(t\), and \(h_{\mathrm{final},t'}\) for the post-final-LayerNorm state that \(E\) consumes.
 
-The encoder is a substrate, not a workspace. It never sees \(E\). Gradients for the lens therefore never enter it: one frozen forward provides cross-attention keys and values.
+Current HuggingFace Whisper records decoder hidden states from each decoder block only. The embedding output is not in that tuple; \(h_{\mathrm{final}}\) is a distinct tensor (final LayerNorm of the last block). The lens therefore has \emph{one map per decoder block}: six on Whisper-base, matching a fitted artifact on this codebase. The encoder is computed once without gradients and is never differentiated.
 
 \subsection{Estimator}
 
-Following~\cite{gurnee2026workspace}, the lens at layer \(\ell\) is the expected causal Jacobian
+Following~\cite{gurnee2026workspace}, the lens at block \(\ell\) is
 \begin{equation}
 J_\ell \;=\;
 \mathbb{E}_{t,\,t'\ge t,\,\text{clip}}
@@ -87,50 +73,60 @@ J_\ell \;=\;
 \in\mathbb{R}^{d\times d}.
 \label{eq:J}
 \end{equation}
-The expectation is over source positions, future positions allowed by the causal mask, and a corpus of teacher-forced transcripts. There is no optimizer and no learned baseline: the model is frozen in evaluation mode, and \(J_\ell\) is \emph{measured}.
+The model is frozen. There is no optimizer and no learned baseline. Fit is teacher-forced: labels are shifted right past the decoder-start token so all \(T\) positions run in one pass.
 
-Exact Jacobians are unnecessary. A Rademacher probe \(r\in\{\pm 1\}^d\) and one vector--Jacobian product of \(\sum_{t'}\langle h_{\mathrm{final},t'},r\rangle\) yield, at every source \(t\) simultaneously, \(\sum_{t'\ge t}J_\ell(t\!\to\! t')^\top r\), because the causal mask zeroes \(t>t'\)~\cite{hutchinson1989trace}. Averaging \(\mathrm{outer}(r,\sum_t g_t)\) over probes and clips, and dividing by the triangular count \(T(T+1)/2\), estimates~\eqref{eq:J}. The encoder sits outside this graph.
+Exact Jacobians are unnecessary. For a Rademacher probe \(r\in\{\pm 1\}^d\), the scalar \(\sum_{t'}\langle h_{\mathrm{final},t'},r\rangle\) has vector--Jacobian product
+\(g_t=\sum_{t'\ge t}J_\ell(t\!\to\! t')^\top r\)
+at every source \(t\) at once, because the causal mask zeroes \(t>t'\). The identity \(\mathbb{E}[rr^\top]=I\) then gives
+\begin{equation}
+\widehat{J}_\ell
+\;=\;
+\frac{1}{NP\cdot T(T+1)/2}
+\sum_{n=1}^{N}\sum_{p=1}^{P}
+r^{(p)}\Bigl(\sum_t g_t^{(n,p)}\Bigr)^\top,
+\label{eq:hutch}
+\end{equation}
+with \(N\) clips and \(P\) probes~\cite{hutchinson1989trace}. Product defaults are \(P=4\) (range \(1\)--\(32\)) and \(N\in[2,1000]\). Audio is truncated at 30\,s (cap 60\,s); Whisper still pads Mel to 30\,s.
 
 \subsection{Readout}
 
-At apply time the decoder actually runs: greedy generation, or a provided reference transcript, produces the positions; a teacher-forced pass collects \(h_{\ell,t}\). Each cell is
+Apply re-runs the decoder. Positions come from the model's generation routine (Whisper's decoding mixin) or from a provided transcript. A teacher-forced pass collects \(h_{\ell,t}\). Each cell is
 \begin{equation}
 \mathrm{lens}(h_{\ell,t})
 \;=\;
-\operatorname{softmax}\bigl(E\,J_\ell h_{\ell,t}\bigr).
+\operatorname{softmax}\bigl(E\,J_\ell h_{\ell,t}\bigr),
 \label{eq:lens}
 \end{equation}
-Whisper's final LayerNorm is inside the decoder, so it is absorbed into \(J_\ell\); we do not apply an extra RMS-norm. Scores sit on the model's logit scale. Top-\(k\) (default \(k=5\)) is a \emph{ranking} of verbalizable content, not a phrase, and the softmax is for display, not calibrated confidence.
+implemented as \(h J_\ell^\top E^\top\). Whisper's final LayerNorm is already inside \(h_{\mathrm{final}}\), so it is absorbed into \(J_\ell\); we do not apply an extra RMS-norm (unlike~\cite{gurnee2026workspace}). Top-\(k\) (default \(k=5\)) ranks logits; the softmax is for display, not calibrated confidence. Neighboring cells are not a phrase.
 
 The readout axis is transcript position, not audio time. Which encoder frame supports a token remains a cross-attention question.
 
 \subsection{Why encoder transports fail}
 
-An earlier design fitted a global map from the mean-pooled encoder state to the mean-pooled decoder state and applied it to 0.3\,s encoder buckets (Table~\ref{tab:redesign}). That object is not~\eqref{eq:J}. Differentiating \emph{after} pooling erases \((t,t')\) alignment; the linearization is around whole-clip means but is applied locally; the unembedding is used off-manifold with the constant term dropped, so scores have no probability semantics. CTC support came for free (the encoder is the only stream) and disappeared with the redesign, correctly: a CTC head never verbalizes through a decoder workspace.
+An earlier design fitted a global map from the mean-pooled encoder state to the mean-pooled decoder state and applied it to 0.3\,s encoder buckets (Table~\ref{tab:redesign}). Differentiating after pooling erases \((t,t')\) alignment; the linearization is around clip means but is applied locally; the unembedding is used off-manifold with the constant dropped. That object is not~\eqref{eq:J}. CTC support came for free (the encoder is the only stream) and disappeared with the redesign: a CTC head never verbalizes through a decoder workspace.
 
 \begin{table}[!t]
-\caption{Encoder transport versus decoder-only lens.}
+\caption{Pooled encoder transport versus the decoder-only lens.}
 \label{tab:redesign}
 \centering
 \setlength{\tabcolsep}{3pt}
-\begin{tabular}{@{}p{0.12\columnwidth}p{0.38\columnwidth}p{0.38\columnwidth}@{}}
+\begin{tabular}{@{}p{0.13\columnwidth}p{0.37\columnwidth}p{0.38\columnwidth}@{}}
 \toprule
- & Pooled encoder transport & Decoder-only J-lens \\
+ & Encoder transport & Decoder-only J-lens \\
 \midrule
 Source & mean of 1500 encoder frames & residual \(h_{\ell,t}\) \\
 Target & mean of \(T\) decoder positions & \(h_{\mathrm{final},t'}\), \(t'\ge t\) \\
 Spaces & encoder \(\to\) decoder & decoder \(\to\) decoder \\
-Readout & \((h-\bar h)J^\top E^\top\) & \(\mathrm{softmax}(EJh)\) \\
+Readout & \((h-\bar h)J^\top E^\top\) & \(\operatorname{softmax}(EJh)\) \\
 Units & 0.3\,s buckets & decoder tokens \\
+CTC & yes & no \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\section{Implementation}
+\section{Implementation and verification}
 
-The lens is a job in ECHO (Fig.~\ref{fig:arch}). Fit writes a format-v2 artifact: architecture ``decoder'', method Hutchinson-decoder-VJP, one square \(d\times d\) matrix per recorded decoder state, bound to a model revision. Apply refuses a mismatch. Only seq2seq ASR adapters expose the architecture; wav2vec~2.0 returns none.
-
-On Whisper-base the grid has seven rows (embedding output plus six blocks). Unit tests recover the closed form \(J=2M/(T+1)\) for a linear decoder with causal triangular averaging, and check apply against an independent \((Jh)E^\top\) recomputation.
+ECHO stores a format-v2 artifact: architecture \emph{decoder}, method Hutchinson-decoder-VJP, one square \(d\times d\) matrix per recorded decoder block, bound to a model revision. Apply refuses a mismatch. Only seq2seq ASR adapters expose the architecture; wav2vec~2.0 returns none. Fig.~\ref{fig:arch} sketches the data flow. A production fit on this codebase uses Whisper-base, \(N=1000\) transcripts, \(P=4\), and writes six \(512\times 512\) maps.
 
 \begin{figure}[!t]
 \centering
@@ -139,53 +135,81 @@ On Whisper-base the grid has seven rows (embedding output plus six blocks). Unit
   box/.style={draw, rounded corners=1pt, align=center, inner sep=3pt, minimum height=0.62cm},
   arr/.style={-{Latex}, thick}
 ]
-\node[box, fill=gray!15, minimum width=2.35cm] (enc) {Encoder\\[-1pt]{\tiny frozen, no grad}};
-\node[box, fill=blue!8, minimum width=2.35cm, right=0.55cm of enc] (dec) {Decoder residuals\\[-1pt]{\tiny \(h_{\ell,t}\), \(\ell=0..L\)}};
-\node[box, fill=orange!15, minimum width=2.35cm, right=0.55cm of dec] (j) {\(J_\ell\)\\[-1pt]{\tiny Hutchinson VJP}};
-\node[box, fill=green!12, minimum width=2.35cm, below=0.45cm of j] (e) {Unembedding \(E\)\\[-1pt]{\tiny frozen, tied}};
-\node[box, minimum width=2.35cm, below=0.45cm of dec] (grid) {\((\text{pos}\times\text{layer})\)\\[-1pt]{\tiny top-\(k\) tokens}};
+\node[box, fill=gray!15, minimum width=2.2cm] (enc) {Encoder\\[-1pt]{\tiny frozen, no grad}};
+\node[box, fill=blue!8, minimum width=2.2cm, right=0.45cm of enc] (dec) {Decoder blocks\\[-1pt]{\tiny \(h_{\ell,t}\), \(\ell=1..L\)}};
+\node[box, fill=orange!15, minimum width=2.2cm, right=0.45cm of dec] (j) {\(J_\ell\)\\[-1pt]{\tiny Hutchinson VJP}};
+\node[box, fill=green!12, minimum width=2.2cm, below=0.42cm of j] (e) {Tied \(E\)\\[-1pt]{\tiny output projection}};
+\node[box, minimum width=2.2cm, below=0.42cm of dec] (grid) {\((\text{pos}\times\text{layer})\)\\[-1pt]{\tiny top-\(k\) logits}};
 \draw[arr] (enc) -- node[above, font=\tiny] {K/V} (dec);
 \draw[arr] (dec) -- (j);
 \draw[arr] (j) -- (e);
 \draw[arr] (e) -- (grid);
 \draw[arr] (dec) -- (grid);
 \end{tikzpicture}
-\caption{ECHO decoder-only J-lens. The encoder supplies cross-attention keys and values and is never differentiated. Each decoder layer has its own \(J_\ell\); readout uses the model's \(E\).}
+\caption{Decoder-only J-lens in ECHO. The encoder supplies cross-attention keys and values only. Each decoder block has its own \(J_\ell\); readout uses the model's tied \(E\).}
 \label{fig:arch}
 \end{figure}
 
-\section{What the grid shows}
+\paragraph{Linear closed form.}
+A unit-test stub uses a position-wise linear decoder \(h_{\mathrm{final},t}=M h_{\ell,t}\) with no mixing across positions. Then \(\partial h_{\mathrm{final},t'}/\partial h_{\ell,t}\) is \(M\) on the diagonal \(t'=t\) and zero otherwise, so the triangular mean in~\eqref{eq:J} is exactly \(2M/(T+1)\). With \(P=512\) Rademacher probes the fitted map matches this matrix to relative Frobenius error below \(0.1\). Apply on the same stub matches an independent recomputation of \((J h)E^\top\) at a held-out cell.
 
-The following readings are observational, from Whisper-base in the ECHO lab. They are hypotheses to measure, not census results. Layer \(0\) is the embedding output; layer \(6\) is the last decoder block.
+These tests check the estimator and the readout identity. They are not a Whisper workspace census.
 
-\textbf{Crystallization depth.}
-A column (one position, all layers) typically moves from frequent-token rankings in the early rows, through syntactic candidates, to the spoken word in the upper-middle band. The row of convergence is a candidate for the depth at which acoustics enter the verbal decision. Columns that never converge mark transcription against the model's internal preference.
+\section{Reading the grid}
 
-\textbf{Start-of-transcript as audio-only workspace.}
-At the start-of-transcript token the decoder has consumed no transcript tokens. Everything in the residual arrived through cross-attention. The top tokens at this position are an acoustic gist of the clip---likely first words, Whisper's silence convention, or background-speech artifacts---the closest available reading of ``what the audio alone put into the workspace.''
+Fig.~\ref{fig:grid} is the contract of one apply job: rows are decoder blocks (UI ``Layer \(\ell{+}1\)'' for 0-based \(\ell\)), columns are decoder input tokens, each cell is a top-\(k\) ranking. The following readings are \emph{affordances of that contract}, not measured effects. We state them so the tool can be used without over-interpreting a cell.
+
+\begin{figure}[!t]
+\centering
+\begin{tikzpicture}[
+  font=\scriptsize,
+  cell/.style={draw=black!45, minimum width=0.70cm, minimum height=0.36cm, inner sep=0pt},
+]
+\foreach \i/\lab in {0/L1, 1/L2, 2/L3, 3/L4, 4/L5, 5/L6} {
+  \node[anchor=east] at (0, 0.42*\i) {\tiny \lab};
+}
+\foreach \j/\tok in {0/SOT, 1/the, 2/first, 3/word, 4/\(\cdots\)} {
+  \node at (0.85+0.78*\j, 2.35) {\tiny \tok};
+}
+\foreach \j in {0,1,2,3,4} {
+  \foreach \i in {0,1,2,3,4,5} {
+    \node[cell] at (0.85+0.78*\j, 0.42*\i) {};
+  }
+}
+\draw[-{Latex}, thick, blue!70!black] (0.85, -0.35) -- (0.85, 2.15);
+\node[blue!70!black, font=\tiny, rotate=90, anchor=south] at (0.48, 0.9) {column};
+\draw[-{Latex}, thick, orange!80!black] (4.85, 1.68) -- (0.45, 1.68);
+\node[orange!80!black, font=\tiny, anchor=west] at (4.95, 1.68) {row};
+\end{tikzpicture}
+\caption{Schematic \((\text{position}\times\text{layer})\) grid. A \emph{column} is a depth trajectory at one token; a \emph{row} is one block along the transcript. Cells are ranked verbalizable tokens, not a generated phrase.}
+\label{fig:grid}
+\end{figure}
+
+\textbf{Start-of-transcript.}
+The first decoder input is the start token. No transcribed word is in the prefix. The residual still contains that token's embedding and position; audio enters only through cross-attention. The cell is the closest available reading of what the audio wrote into the decoder before any transcript language model context.
+
+\textbf{Depth trajectory.}
+A column can be read from early blocks (often frequent-token geometry) toward later blocks (closer to the emitted word). Where a content word first enters the top-\(k\) is a candidate crystallization depth. A column that never ranks the emitted word is a candidate for transcription against the decoder's internal ranking.
 
 \textbf{Prior versus evidence.}
-When mid and late layers agree on a collocation, the token is language-model driven. When mid layers stay generic and the top rows flip to an unusual word, the token came from the audio. Sweeping that disagreement is a per-word prior-versus-evidence map.
+Agreement of mid and late blocks on a collocation is consistent with a language-model prior. A late-block flip to an acoustically specific word is consistent with audio-driven selection. This is a comparison of rankings, not a causal mediation test.
 
-\textbf{Hallucination precursors.}
-Under silence, Whisper's repetition loop is often ranked highly in mid layers \emph{before} generation commits. The grid is a leading indicator, not only a post-hoc explanation.
+\textbf{Ambiguity, loops, endpoints.}
+A wide top-\(k\) (their/there/they're) is consistent with under-determined acoustics. Rankings of a repetition token before generation emits it would be a leading indicator of Whisper's silence loop, if observed. Drift toward end-of-text or trained closers while speech continues would be an early-cutoff signature, if observed.
 
-\textbf{Ambiguity and endpoints.}
-A wide top-\(k\) spread at a position (their/there/they're) flags under-determined acoustics. Near the end of speech, readouts drift toward end-of-text, punctuation, or trained closers such as ``thank you''; premature stop-direction while speech continues is an early-cutoff signature.
-
-These patterns are the speech analogue of the LLM observation that early-layer readouts are noise and that a mid-depth band carries verbalizable content~\cite{gurnee2026workspace}. Confirming a workspace \emph{range} with a layer-wise top-1 agreement curve is left as future work.
+A layer-wise top-1 agreement curve---the speech analogue of the LLM workspace band~\cite{gurnee2026workspace}---is not reported here.
 
 \section{Limitations}
 
-The map is a first-order average: rankings are more trustworthy than absolute scores, and a position far from the fit distribution will be misread. Because \(J_\ell\) averages over pairs, the lens cannot name the supporting audio frame. Fit targets are teacher-forced, so \(J\) reflects ``given this prefix,'' not free-running generation. Hutchinson probes (we default to four) leave residual estimation noise. Frequent-token geometry biases rankings. The artifact is model-revision bound. Write-mode interventions (steer, ablate, patch) from~\cite{gurnee2026workspace} are not implemented. We report no large-scale census.
+\(J_\ell\) is a first-order average: trust rankings more than scores, and expect error far from the fit distribution. Averaging over pairs erases which audio frame a token reads. Fit is teacher-forced, so \(J\) reflects ``given this prefix,'' not free-running dynamics. \(P=4\) leaves probe noise; the closed-form test used \(P=512\). Frequent tokens dominate geometry. The artifact is revision-bound. Write-mode interventions from~\cite{gurnee2026workspace} are unimplemented. Layer count follows whatever HuggingFace records as decoder hidden states; it is six on current Whisper-base, not an embedding-plus-blocks stack.
 
 \section{Conclusion}
 
-The Jacobian lens is a statement about a residual stream that is about to be unembedded. In encoder--decoder ASR that stream is the decoder's. Fitted there, with causal averaging and the model's own \(E\), it yields a \((\text{position}\times\text{layer})\) vocabulary grid that ECHO can already show. Fitted on pooled encoder states, it yields an object that is no longer a lens. The next measurements---workspace-band statistics, multi-size Whisper, and a write mode---should be taken on the decoder construction, not the encoder one.
+The Jacobian lens is a statement about a residual that is about to be unembedded. In encoder--decoder ASR that residual is the decoder's. Fitted there, with causal averaging and the model's own \(E\), it is the same estimator as in~\cite{gurnee2026workspace} and is already a job in ECHO. Fitted on pooled encoder states, it is not a lens. The measurements that would make the speech case as strong as the LLM case---workspace-band statistics, multi-size Whisper, and a write mode---should be taken on this decoder construction.
 
 \section*{Acknowledgments}
 
-We thank Dr.~Uthayasanker Thayasivam for guidance, and the ECHO-Lit group for the platform this lens ships in. The estimator follows Gurnee et~al.~\cite{gurnee2026workspace}; remaining errors are ours.
+We thank Dr.~Uthayasanker Thayasivam for guidance. The estimator follows Gurnee et~al.~\cite{gurnee2026workspace}; remaining errors are ours.
 
 \balance
 \bibliographystyle{IEEEtran}

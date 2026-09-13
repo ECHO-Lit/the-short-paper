@@ -1,6 +1,8 @@
 # Qualitative readings of the grid
 
-These are **observational**. Do not promote them to measured laws. Layer index \(0\) is the decoder embedding output (UI “Layer 1”); the highest index is the last decoder block. On whisper-base there are 7 lens layers \(0..6\). The final pre-logit state is the fit *target* and is never a readout layer.
+These are a **reading protocol**, not measured results. Do not write “we find” or “we recover” unless a figure from a real apply job is in the paper.
+
+Layer index \(0\) is the first decoder **block** (UI “Layer 1”). On whisper-base there are **six** lens layers. The final pre-logit state is the fit *target* and is never a readout layer.
 
 A column = one position, all layers (depth trajectory). A row = one layer, all positions.
 

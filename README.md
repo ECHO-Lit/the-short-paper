@@ -12,7 +12,7 @@ The construction follows Gurnee et al. (2026), *Verbalizable Representations For
 | [`paper/`](paper/) | IEEE conference short-paper source (`IEEEtran`). |
 | [`paper/main.pdf`](paper/main.pdf) | Compiled draft. |
 
-Start with [`context/00-overview.md`](context/00-overview.md) and [`context/07-writing-notes.md`](context/07-writing-notes.md).
+Start with [`context/00-overview.md`](context/00-overview.md), [`context/07-writing-notes.md`](context/07-writing-notes.md), and [`context/08-verification.md`](context/08-verification.md) (claim-by-claim check against the ECHO-LIT implementation).
 
 ## Build the PDF
 

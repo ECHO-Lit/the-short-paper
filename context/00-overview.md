@@ -22,7 +22,7 @@ The LLM Jacobian lens transfers to encoder–decoder speech-to-text **if and onl
 1. **Decoder-only construction.** One Jacobian \(J_\ell\) per decoder layer, \(J_\ell = \mathbb{E}_{t,\,t'\ge t}[\partial h_{\mathrm{final},t'}/\partial h_{\ell,t}]\), estimated with Hutchinson VJPs. Encoder runs under `no_grad` and is never lensed.
 2. **Failure analysis of encoder transports.** Mean-pooling before differentiation erases \((t,t')\) structure, linearizes around clip means while being applied to local buckets, and drops the readout onto a space that is not the model's logit scale.
 3. **Same-space readout.** \(\mathrm{lens}(h)=\mathrm{softmax}(E\,J_\ell h)\) with the frozen unembedding \(E\). Positions are decoder tokens, not audio-time buckets.
-4. **ECHO integration.** Fit/apply jobs, a `(position × layer)` visualization, and tests against a linear-decoder closed form.
+4. **ECHO integration.** Fit/apply jobs, a `(position × layer)` visualization, and tests against a linear-decoder closed form. Whisper-base has **six** lens layers (decoder blocks), not seven.
 
 ## Scope of the implementation
 
