@@ -30,7 +30,7 @@ University of Moratuwa, Sri Lanka}
 \begin{abstract}
 The Jacobian lens identifies representations a language model is poised to verbalize by averaging causal maps from a layer's residual stream to the final pre-logit state. Encoder--decoder speech recognizers split that residual across two stacks: an encoder that is never unembedded and a decoder that is. We show that a pooled encoder-to-decoder transport is not this object---it destroys the causal \((t,t')\) structure and leaves the unembedding off-manifold. We instead fit one Jacobian per decoder block,
 \(J_\ell=\mathbb{E}_{t,\,t'\ge t}[\partial h_{\mathrm{final},t'}/\partial h_{\ell,t}]\),
-with Hutchinson probes, and read out \(\operatorname{softmax}(E J_\ell h_{\ell,t})\) through Whisper's own tied projection. The construction is implemented in ECHO. On a linear stub decoder the estimator recovers the closed form \(J=2M/(T+1)\) to relative Frobenius error \(<0.1\); a Whisper-base fit yields six \(512\times 512\) maps. We specify a reading protocol for the resulting \((\text{position}\times\text{layer})\) grid and leave a workspace-band census as future work.
+with Hutchinson probes, and read out \(\operatorname{softmax}(E J_\ell h_{\ell,t})\) through Whisper's own tied projection. The construction is implemented in ECHO. On a linear stub decoder the estimator recovers the closed form \(J=2M/(T+1)\) to relative Frobenius error \(<0.1\); a Whisper-base fit yields six \(512\times 512\) maps. The resulting \((\text{position}\times\text{layer})\) grid is a vocabulary-space audit of what the decoder is poised to say: it supports substitution and hallucination inspection, prior-versus-evidence maps, and choosing which decoder depth to probe---questions that attention and saliency do not answer. A workspace-band census is left as future work.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -43,7 +43,7 @@ Whisper~\cite{radford2023whisper} and related encoder--decoder ASR models transc
 
 Gurnee et~al.~\cite{gurnee2026workspace} give language models a tool for that inspection: the Jacobian lens averages \(\partial h_{\mathrm{final},t'}/\partial h_{\ell,t}\) over causally allowed pairs \(t'\ge t\), then reads the transported residual with the model's unembedding. The ranked tokens are what the model is \emph{poised to verbalize}. The construction assumes a single residual stream that ends in an unembedding. Speech-to-text models do not: the encoder never sees that unembedding.
 
-This paper ports the estimator to the stream that does. We fit decoder-only Jacobians for seq2seq ASR, estimate them with Hutchinson probes~\cite{hutchinson1989trace} so the encoder can sit outside the autograd graph, and ship fit/apply as jobs in ECHO, an audio interpretability workbench in the spirit of LIT~\cite{tenney2020lit}. We also record why a pooled encoder transport---the obvious first attempt---is a different, weaker object. We do not claim that Whisper has a global workspace; we claim that if one wants the LLM lens, one must fit it on the decoder.
+This paper ports the estimator to the stream that does. We fit decoder-only Jacobians for seq2seq ASR, estimate them with Hutchinson probes~\cite{hutchinson1989trace} so the encoder can sit outside the autograd graph, and ship fit/apply as jobs in ECHO, an audio interpretability workbench in the spirit of LIT~\cite{tenney2020lit}. We also record why a pooled encoder transport---the obvious first attempt---is a different, weaker object. Practically, the tool is for people who already have a transcript (or a failure) and need to know whether the decoder was ranking the spoken word, a language-model collocation, a silence loop, or an early stop---without claiming that Whisper has a global workspace. The claim is narrower: if one wants the LLM lens, one must fit it on the decoder.
 
 \section{Related Work}
 
@@ -155,9 +155,70 @@ A unit-test stub uses a position-wise linear decoder \(h_{\mathrm{final},t}=M h_
 
 These tests check the estimator and the readout identity. They are not a Whisper workspace census.
 
-\section{Reading the grid}
+\section{What the analysis provides}
 
-Fig.~\ref{fig:grid} is the contract of one apply job: rows are decoder blocks (UI ``Layer \(\ell{+}1\)'' for 0-based \(\ell\)), columns are decoder input tokens, each cell is a top-\(k\) ranking. The following readings are \emph{affordances of that contract}, not measured effects. We state them so the tool can be used without over-interpreting a cell.
+A fitted lens is reused. Each apply job on one clip returns a grid (Fig.~\ref{fig:grid}): rows are decoder blocks (UI ``Layer \(\ell{+}1\)'' for 0-based \(\ell\)), columns are decoder input tokens (generated, or a provided reference), and each cell is a top-\(k\) ranking with logit scores. That ranking is the analysis. It is not a second transcript, not an attention map, and not a confidence calibrated to word error.
+
+Three properties distinguish it from the other ECHO tools. Attention answers \emph{where} a decoder position looked in the 1500 encoder frames. Saliency answers \emph{which waveform region} moved a scalar score. The J-lens answers \emph{what token the decoder residual is aligned with} at that depth, in the model's own vocabulary, after replacing everything downstream of the block by the average causal map~\eqref{eq:J}. The three views are meant to be used together: attention for alignment, saliency for the waveform, the grid for verbal content.
+
+The readings below are \emph{affordances of that contract}---what an analyst can ask the grid---not measured effects on a corpus. A cell is a first-order, context-averaged disposition, not a guaranteed continuation.
+
+\subsection{How to read one clip}
+
+\textbf{Start-of-transcript.}
+The first decoder input is the start token. No transcribed word is in the prefix. The residual still contains that token's embedding and position; audio enters only through cross-attention. The cell is the closest available reading of what the audio wrote into the decoder before any transcript language-model context: likely first words, Whisper's silence convention, or background-speech artifacts.
+
+\textbf{Depth trajectory (a column).}
+Read one position from early blocks (often frequent-token geometry) toward later blocks (closer to the emitted word). Where a content word first enters the top-\(k\) is a candidate crystallization depth---the depth at which acoustic evidence is integrated into a verbal decision. A column that never ranks the emitted word is a candidate for transcription against the decoder's internal ranking: the model said the word, but the residual was not poised to say it.
+
+\textbf{Prior versus evidence (mid vs.\ late at the same \(t\)).}
+Agreement of mid and late blocks on a collocation is consistent with a language-model prior; the audio could have been almost anything. A late-block flip to an acoustically specific or rare word is consistent with audio-driven selection. Sweeping that disagreement along the transcript is a per-word prior-versus-listening map. It is a comparison of rankings, not a causal mediation test.
+
+\textbf{Ambiguity, loops, endpoints.}
+A wide top-\(k\) (their/there/they're, or two number names) is consistent with under-determined acoustics and a fallback to prior; a narrow gap is consistent with the acoustics having decided. Rankings of a repetition token \emph{before} generation emits it would be a leading indicator of Whisper's silence loop. Drift toward end-of-text or trained closers (``thank you'') while speech continues would be an early-cutoff signature; its absence on run-on audio is the complementary runaway-transcription signature.
+
+\subsection{Practical use}
+
+Table~\ref{tab:use} maps analyst questions onto those readings. The intended user is someone already looking at a clip in ECHO---a researcher debugging Whisper, a practitioner auditing a high-stakes transcript, or a student asking why two models diverged.
+
+\textbf{Substitution audit.}
+When the hypothesis is ``the model heard \(A\) but wrote \(B\),'' apply with the generated transcript and read the column at \(B\). If \(A\) never enters the top-\(k\), the decoder was not poised to say the spoken word (a listening failure, or an encoder/cross-attention failure---check attention next). If \(A\) ranks in mid blocks and \(B\) only at the top, the residual had the spoken word and the unembedding path preferred a collocation. That distinction is the difference between collecting more audio and changing decoding or prompting.
+
+\textbf{Hallucination and silence loops.}
+Whisper's familiar failure under padded silence is a repetition loop. Apply on the failing clip and scan cells \emph{before} the first repeated token. Loop tokens ranked highly in mid blocks while the input token is unrelated are a precursor in vocabulary space: the direction is visible before it is spoken. The same procedure flags confabulated content words under noise. This is a diagnostic for a single clip, not a detector with a reported false-positive rate.
+
+\textbf{Ambiguity and high-stakes tokens.}
+For names, numbers, and homophones, sort positions by top-\(k\) score gap. Wide cells are where a human reviewer should look first. The lens does not replace a language model confidence score; it shows the \emph{competitors} in the decoder residual, which a scalar WER or log-probability does not.
+
+\textbf{Clean versus perturbed audio.}
+ECHO already applies noise, masks, and pitch shift. Applying the same lens to the clean clip and the perturbed clip, with the same reference transcript, shows whether crystallization depth moved, whether a late-block ranking flipped, or whether a loop precursor appeared---a decoder-state view of robustness complementary to WER.
+
+\textbf{Generated versus teacher-forced.}
+Apply twice: once with generated positions and once with a gold transcript. Disagreement in a column is a candidate for free-running dynamics that teacher-forcing hides. Fit itself is teacher-forced, so this comparison is an inspection, not a claim that \(J\) models the sampler.
+
+\textbf{Where to probe.}
+Layer probes and interventions are expensive if run on every block. A cheap apply pass suggests which rows are worth reading (where top-1 first matches the next token) and which can be ignored as frequent-token noise. Confirming that band with a corpus-level top-1 agreement curve---the speech analogue of the LLM workspace band~\cite{gurnee2026workspace}---is not reported here.
+
+What the analysis is \emph{not}: it does not name the supporting audio frame; it does not give calibrated word confidence; it does not steer or ablate the model; it does not apply to CTC. Those jobs stay with cross-attention, proper uncertainty estimators, a future write mode, and encoder-side tools respectively.
+
+\begin{table}[!t]
+\caption{Analyst questions, what to read, and the complementary ECHO tool.}
+\label{tab:use}
+\centering
+\setlength{\tabcolsep}{2.5pt}
+\begin{tabular}{@{}p{0.30\columnwidth}p{0.32\columnwidth}p{0.28\columnwidth}@{}}
+\toprule
+Question & Read & Complements \\
+\midrule
+Spoken word ranked? & column at the error & cross-attention \\
+Prior or audio? & mid vs.\ late, same \(t\) & --- \\
+Loop forming? & cells before the repeat & waveform / silence \\
+Ambiguous token? & top-\(k\) score gap & --- \\
+Noise changed it? & same column, clean vs.\ noisy & perturbation WER \\
+Which depth to probe? & row where top-1 first matches & layer probes \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \begin{figure}[!t]
 \centering
@@ -185,27 +246,13 @@ Fig.~\ref{fig:grid} is the contract of one apply job: rows are decoder blocks (U
 \label{fig:grid}
 \end{figure}
 
-\textbf{Start-of-transcript.}
-The first decoder input is the start token. No transcribed word is in the prefix. The residual still contains that token's embedding and position; audio enters only through cross-attention. The cell is the closest available reading of what the audio wrote into the decoder before any transcript language model context.
-
-\textbf{Depth trajectory.}
-A column can be read from early blocks (often frequent-token geometry) toward later blocks (closer to the emitted word). Where a content word first enters the top-\(k\) is a candidate crystallization depth. A column that never ranks the emitted word is a candidate for transcription against the decoder's internal ranking.
-
-\textbf{Prior versus evidence.}
-Agreement of mid and late blocks on a collocation is consistent with a language-model prior. A late-block flip to an acoustically specific word is consistent with audio-driven selection. This is a comparison of rankings, not a causal mediation test.
-
-\textbf{Ambiguity, loops, endpoints.}
-A wide top-\(k\) (their/there/they're) is consistent with under-determined acoustics. Rankings of a repetition token before generation emits it would be a leading indicator of Whisper's silence loop, if observed. Drift toward end-of-text or trained closers while speech continues would be an early-cutoff signature, if observed.
-
-A layer-wise top-1 agreement curve---the speech analogue of the LLM workspace band~\cite{gurnee2026workspace}---is not reported here.
-
 \section{Limitations}
 
 \(J_\ell\) is a first-order average: trust rankings more than scores, and expect error far from the fit distribution. Averaging over pairs erases which audio frame a token reads. Fit is teacher-forced, so \(J\) reflects ``given this prefix,'' not free-running dynamics. \(P=4\) leaves probe noise; the closed-form test used \(P=512\). Frequent tokens dominate geometry. The artifact is revision-bound. Write-mode interventions from~\cite{gurnee2026workspace} are unimplemented. Layer count follows whatever HuggingFace records as decoder hidden states; it is six on current Whisper-base, not an embedding-plus-blocks stack.
 
 \section{Conclusion}
 
-The Jacobian lens is a statement about a residual that is about to be unembedded. In encoder--decoder ASR that residual is the decoder's. Fitted there, with causal averaging and the model's own \(E\), it is the same estimator as in~\cite{gurnee2026workspace} and is already a job in ECHO. Fitted on pooled encoder states, it is not a lens. The measurements that would make the speech case as strong as the LLM case---workspace-band statistics, multi-size Whisper, and a write mode---should be taken on this decoder construction.
+The Jacobian lens is a statement about a residual that is about to be unembedded. In encoder--decoder ASR that residual is the decoder's. Fitted there, with causal averaging and the model's own \(E\), it is the same estimator as in~\cite{gurnee2026workspace} and is already a job in ECHO: an analyst can audit a substitution, inspect a silence loop, or decide which decoder depth to probe, using the same vocabulary the model speaks. Fitted on pooled encoder states, it is not a lens. The measurements that would make the speech case as strong as the LLM case---workspace-band statistics, multi-size Whisper, and a write mode---should be taken on this decoder construction.
 
 \section*{Acknowledgments}
 
