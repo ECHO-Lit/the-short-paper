@@ -1,18 +1,18 @@
-# The Short Paper
+# ECHO — Systems Paper
 
-Short paper on a **decoder-only Jacobian lens** for speech-to-text models, implemented in [ECHO-LIT](https://github.com/ECHO-Lit/ECHO-LIT).
+IEEE conference paper on **ECHO** (Explainable Computation for Hearing Outputs) as a whole: an interactive interpretability workbench for speech models. Companion to the Jacobian-lens short paper in [`../the-short-paper/`](../the-short-paper/).
 
-The construction follows Gurnee et al. (2026), *Verbalizable Representations Form a Global Workspace in Language Models*, applied to Whisper's decoder residual stream rather than to an LLM.
+This paper is a **systems / demo** draft. It surveys the platform, not a single method. Claims must match the ECHO-LIT implementation; do not invent user studies or metric tables.
 
 ## Layout
 
 | Path | Role |
 |---|---|
-| [`context/`](context/) | Source notes for authors and writing assistants. Claims, method, findings, and citation keys live here — not in the TeX alone. |
-| [`paper/`](paper/) | IEEE conference short-paper source (`IEEEtran`). |
+| [`context/`](context/) | Source notes for authors. Allowed claims and code pointers live here. |
+| [`paper/`](paper/) | IEEE conference source (`IEEEtran`). |
 | [`paper/main.pdf`](paper/main.pdf) | Compiled draft. |
 
-Start with [`context/00-overview.md`](context/00-overview.md), [`context/07-writing-notes.md`](context/07-writing-notes.md), [`context/08-verification.md`](context/08-verification.md) (claim-by-claim check against the ECHO-LIT implementation), and [`context/09-use-cases.md`](context/09-use-cases.md) (what an analyst actually does with the grid).
+Start with [`context/00-overview.md`](context/00-overview.md) and [`context/01-writing-notes.md`](context/01-writing-notes.md).
 
 ## Build the PDF
 
@@ -27,8 +27,4 @@ Clean aux files with `make clean`. The PDF is written to `paper/main.pdf`.
 
 ## Code
 
-The lens is implemented in ECHO-LIT:
-
-- Fit / apply: `Backend/app/services/jacobian_lens_service.py`
-- Tests: `Backend/tests/test_jacobian_lens.py`
-- Technical reference in that repo: `JACOBIAN_LENS.md`
+The system is implemented in [ECHO-LIT](https://github.com/ECHO-Lit/ECHO-LIT).
