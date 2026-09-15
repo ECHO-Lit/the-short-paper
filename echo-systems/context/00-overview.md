@@ -15,7 +15,7 @@ ECHO is a LIT-style interactive workbench for **speech** models: a FastAPI contr
 - The toolkit: one question per tool, used together.
 - The Jacobian lens is **one** tool, not the paper's centre.
 
-**Is not:** a large-scale empirical study, a user study, or a methods paper about the J-lens (that is `the-short-paper/`). Do not report numeric WER, probe accuracies, fairness gaps, or workspace-band curves unless a measured table is added later.
+**Is not:** a large-scale empirical study, a user study, or a methods paper about the J-lens (that is [`../jacobian-lens/`](../jacobian-lens/)). Do not report numeric WER, probe accuracies, fairness gaps, or workspace-band curves unless a measured table is added later.
 
 ## Contributions (use this wording)
 

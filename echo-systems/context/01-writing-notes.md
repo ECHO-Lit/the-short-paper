@@ -2,7 +2,7 @@
 
 ## Voice
 
-IEEE conference systems / demonstration paper, ~5–6 pages plus references. Hedged. No invented metrics. The Jacobian-lens short paper (`../the-short-paper/`) owns the estimator; this paper names the lens as one panel.
+IEEE conference systems / demonstration paper, ~5–6 pages plus references. Hedged. No invented metrics. The Jacobian-lens short paper (`../jacobian-lens/`) owns the estimator; this paper names the lens as one panel.
 
 ## Author block
 

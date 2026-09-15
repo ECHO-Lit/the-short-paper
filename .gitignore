@@ -18,8 +18,8 @@
 *.lot
 *.bcf
 *.run.xml
-paper/*.pdf
-!paper/main.pdf
+**/paper/*.pdf
+!**/paper/main.pdf
 
 .DS_Store
 .claude
